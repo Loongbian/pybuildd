@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # vim:set et ts=4 sw=4:
+
 """buildd schedules builds on the current machine.
 
 This binary continuously polls for next builds to be run, takes them from
@@ -178,8 +179,9 @@ class Builder:
     def build(self, pkg: Package):
         """Builds a package using sbuild."""
         logging.info('Building %s...', pkg)
-        logging.debug('Metadata: %s', pkg)
-        # TODO: environment
+        logging.debug('Metadata: %s', vars(pkg))
+        build_dir = os.path.expanduser('~/build')
+        os.makedirs(build_dir, exist_ok=True)
         args = [
             'sbuild',
             '--apt-update',
@@ -208,7 +210,7 @@ class Builder:
         if pkg.extra_conflicts:
             args.append('--add-conflicts=' + pkg.extra_conflicts)
         args.append('{p.source_package}_{p.version}'.format(p=pkg))
-        rc = subprocess.run(args).returncode
+        rc = subprocess.run(args, cwd=build_dir).returncode
         if rc == 0:
             logging.info('Build of %s succeeded.', pkg)
             result = 'built'
@@ -229,6 +231,7 @@ def main():
     logging.basicConfig(
         level=logging.DEBUG,
         format='%(asctime)-15s %(levelname)-8s %(message)s')
+    os.environ['DEB_BUILD_OPTIONS'] = 'parallel=auto'
     config = configparser.ConfigParser()
     config.read(['/etc/buildd.conf', os.path.expanduser('~/.buildd.conf')])
     buildd_config = config['buildd'] if 'buildd' in config else {}
