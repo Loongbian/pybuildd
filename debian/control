@@ -1,0 +1,15 @@
+Source: pybuildd
+Section: admin
+Priority: optional
+Maintainer: Philipp Kern <pkern@debian.org>
+Build-Depends: debhelper (>= 9), dh-exec, python3, python3-yaml
+
+Package: pybuildd
+Architecture: all
+Depends: ${shlibs:Depends}, ${misc:Depends}, python3-yaml
+Conflicts: buildd
+Replaces: buildd
+Description: Daemon for automatically building Debian packages
+ This package provides a daemon that is closely coupled with the wanna-build
+ infrastructure Debian uses to build packages. It provides a minimal daemon
+ that is able to poll the master for builds and execute them using sbuild.

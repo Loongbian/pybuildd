@@ -1,0 +1,12 @@
+[Unit]
+Description=Debian buildd
+StartLimitIntervalSec=1min
+StartLimitBurst=5
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/buildd
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

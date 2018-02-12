@@ -1,0 +1,5 @@
+pybuildd (0.1) unstable; urgency=medium
+
+  * Initial release. (Closes: #XXXXXX)
+
+ -- Philipp Kern <pkern@debian.org>  Mon, 12 Feb 2018 20:28:54 +0100
