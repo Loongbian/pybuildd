@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # vim:set et ts=4 sw=4:
-
 """buildd schedules builds on the current machine.
 
 This binary continuously polls for next builds to be run, takes them from
@@ -231,7 +230,8 @@ def main():
     logging.basicConfig(
         level=logging.DEBUG,
         format='%(asctime)-15s %(levelname)-8s %(message)s')
-    os.environ['DEB_BUILD_OPTIONS'] = 'parallel=auto'
+    os.environ['DEB_BUILD_OPTIONS'] = 'parallel={}'.format(
+        len(os.sched_getaffinity(0)))
     config = configparser.ConfigParser()
     config.read(['/etc/buildd.conf', os.path.expanduser('~/.buildd.conf')])
     buildd_config = config['buildd'] if 'buildd' in config else {}
