@@ -1,0 +1,12 @@
+[Unit]
+Description=Control master connection to wanna-build
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/ssh -l wb-buildd -S buildd.debian.org.ssh buildd.debian.org -MN
+WorkingDirectory=~
+User=buildd
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

@@ -2,10 +2,14 @@
 Description=Debian buildd
 StartLimitIntervalSec=1min
 StartLimitBurst=5
+Requires=buildd-ssh-master.service
+After=buildd-ssh-master.service
 
 [Service]
 Type=simple
 ExecStart=/usr/bin/buildd
+WorkingDirectory=~
+User=buildd
 Restart=always
 
 [Install]
