@@ -45,6 +45,11 @@ _WB_TAKE_FAILED_OUTPUT = subprocess.CompletedProcess(
     - status: not ok
     - reason: "is up-to-date in the archive; doesn't need rebuilding"
 """)
+# B424EB74051F4844 is a key that expired a long time ago and should
+# hence never be picked. DFE4C0B481F37BDB is the reference key that
+# is still active at the point in time we check. 135DC390E4032D36
+# has been generated as the next key to use (and is hence already
+# valid).
 _GPG_KEYLIST = """\
 sec:e:4096:1:B424EB74051F4844:1398721900:1430257900::u:::sc:::+::::
 rvk:::1::::::F75FBFCD771DEB5E9C86050550C3634D3A291CF9:80:
@@ -53,21 +58,6 @@ rvk:::1::::::E5E52560DD91C556DDBDA5D02064C53641C25E5D:80:
 fpr:::::::::091BC8E250417B2041F990ACB424EB74051F4844:
 grp:::::::::2FF5C26CCC68B2EB11D375867645326471566E1B:
 uid:e::::1398721900::846EE2E487D23670F70426952DD6DBEC80B2CE92::buildd key:
-sec:e:4096:1:9A070ABE09C2F069:1398722019:1430258019::u:::sc:::+::::
-rvk:::1::::::F75FBFCD771DEB5E9C86050550C3634D3A291CF9:80:
-rvk:::17::::::E820094883974FDC3CD00EC699D399A1EC36A185:80:
-rvk:::1::::::E5E52560DD91C556DDBDA5D02064C53641C25E5D:80:
-fpr:::::::::0CC7E6933104204ABE815B7D9A070ABE09C2F069:
-grp:::::::::558353E3C89E8F8A82054C8B1088BE953797C66B:
-uid:e::::1398722019::1F0137B25C97D57935ACDBEDF4821753BA8825EE::buildd key:
-sec:e:4096:1:36515BB1BFDBE44D:1439455899:1470991899::u:::sc:::+::::
-rvk:::1::::::F75FBFCD771DEB5E9C86050550C3634D3A291CF9:80:
-rvk:::1::::::010BF4B922AC26888C4F895F49BB63F18B4CCAD5:80:
-rvk:::1::::::E5E52560DD91C556DDBDA5D02064C53641C25E5D:80:
-rvk:::1::::::77462642A9EF94FD0F77196DBA9C78061DDD8C9B:80:
-fpr:::::::::07B86C48664855CB11F30CA536515BB1BFDBE44D:
-grp:::::::::2EAA6F2F17733120D4209D15392B739792D31E82:
-uid:e::::1439455899::846EE2E487D23670F70426952DD6DBEC80B2CE92::buildd key:
 sec:e:4096:1:DFE4C0B481F37BDB:1468787574:1500323574::u:::sc:::+::::
 rvk:::1::::::F75FBFCD771DEB5E9C86050550C3634D3A291CF9:80:
 rvk:::1::::::010BF4B922AC26888C4F895F49BB63F18B4CCAD5:80:
@@ -129,9 +119,9 @@ class BuilderTest(unittest.TestCase):
         self.assertEqual(next(self.builder.builds()), None)
 
     def test_gpg_key_selection(self):
-        # Two active keys. Picks the one with the largest TTL.
+        # Two active keys. Picks the one with the smallest TTL.
         with patch('time.time', return_value=1500000000):
-            self.assertEqual('135DC390E4032D36',
+            self.assertEqual('DFE4C0B481F37BDB',
                              self.builder._pick_gpg_key(_GPG_KEYLIST))
         # One active key some time later.
         with patch('time.time', return_value=1518458890.395519):

@@ -95,11 +95,13 @@ class Builder:
             _, keylist = _run(
                 args=['gpg', '--with-colons', '--list-secret-keys'],
                 check=True)
-        # There might be multiple secret keys available, most likely because
-        # most of them are actually expired. Prefer the key with the highest
-        # TTL left based off the expiry field. Note that this code requires
-        # that the expiry is set, which is the case for all of Debian's
-        # production keys.
+        # There might be multiple secret keys available. Most likely some
+        # of them are already expired and some are not active yet. As a
+        # heuristic pick the key with the closest expiry that is still
+        # valid. The assumption is that a key that has a vastly larger
+        # expiry is new and might not be active on the archive side yet.
+        # Note that this code requires that the expiry is set, which is the
+        # case for all of Debian's production keys.
         keys = {}  # type: Dict[str, float]
         t = time.time()
         for line in keylist.splitlines():
@@ -109,7 +111,7 @@ class Builder:
             if t > float(expires):
                 continue
             keys[keyid] = float(expires) - t
-        return max(keys, key=keys.get) if keys else None
+        return min(keys, key=keys.get) if keys else None
 
     @property
     def _mail_from_email(self) -> str:
