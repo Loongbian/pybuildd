@@ -2,11 +2,11 @@ Source: pybuildd
 Section: admin
 Priority: optional
 Maintainer: Philipp Kern <pkern@debian.org>
-Build-Depends: debhelper (>= 9), dh-exec, python3, python3-yaml
+Build-Depends: debhelper (>= 9), dh-exec, python3, python3-yaml, python3-retrying
 
 Package: pybuildd
 Architecture: all
-Depends: ${shlibs:Depends}, ${misc:Depends}, python3-yaml
+Depends: ${shlibs:Depends}, ${misc:Depends}, python3-yaml, python3-retrying
 Conflicts: buildd
 Replaces: buildd
 Description: Daemon for automatically building Debian packages

@@ -19,6 +19,8 @@ import platform
 import socket
 import subprocess
 import time
+
+from retrying import retry
 import yaml
 
 _ARCHIVE_TO_DUPLOAD_TARGET = {
@@ -254,24 +256,43 @@ class Builder:
             '{p.source_package}_{p.version}'.format(p=pkg))
         return True if result == 'built' else False
 
+    @retry(stop_max_attempt_number=3, wait_fixed=2 * 60)
+    def _run_dupload(self, target, cwd, filename):
+        subprocess.run(
+            ['dupload', '--to', target, filename], check=True, cwd=cwd)
+
     def upload(self, pkg: Package):
         if pkg.archive not in _ARCHIVE_TO_DUPLOAD_TARGET:
             logging.error('Could not upload to %s: target not hardcoded.',
                           pkg.archive)
         target = _ARCHIVE_TO_DUPLOAD_TARGET[pkg.archive]
-        subprocess.run(
-            [
-                'dupload', '--to', target,
+
+        try:
+            self._run_dupload(
+                target,
+                self.build_dir(pkg),
                 '{p.source_package}_{p.epochless_version}_{p.architecture}.changes'.
-                format(p=pkg)
-            ],
-            check=True,
-            cwd=self.build_dir(pkg))
-        self._query_wannabuild(
-            pkg.architecture,
-            pkg.distribution,
-            '--uploaded',
-            '{p.source_package}_{p.version}'.format(p=pkg))
+                format(p=pkg))
+            subprocess.run(
+                [
+                    'dupload', '--to', target,
+                    '{p.source_package}_{p.epochless_version}_{p.architecture}.changes'.
+                    format(p=pkg)
+                ],
+                check=True,
+                cwd=self.build_dir(pkg))
+            self._query_wannabuild(
+                pkg.architecture,
+                pkg.distribution,
+                '--uploaded',
+                '{p.source_package}_{p.version}'.format(p=pkg))
+        except:
+            self._query_wannabuild(
+                pkg.architecture,
+                pkg.distribution,
+                '--give-back',
+                '{p.source_package}_{p.version}'.format(p=pkg))
+            raise
 
 
 def main():
