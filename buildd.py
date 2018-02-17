@@ -270,7 +270,7 @@ class Builder:
         try:
             self._run_dupload(
                 target,
-                self.build_dir(pkg),
+                self._build_dir(pkg),
                 '{p.source_package}_{p.epochless_version}_{p.architecture}.changes'.
                 format(p=pkg))
             subprocess.run(
@@ -280,7 +280,7 @@ class Builder:
                     format(p=pkg)
                 ],
                 check=True,
-                cwd=self.build_dir(pkg))
+                cwd=self._build_dir(pkg))
             self._query_wannabuild(
                 pkg.architecture,
                 pkg.distribution,
