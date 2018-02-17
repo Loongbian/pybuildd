@@ -89,7 +89,9 @@ def _pick_gpg_key(keylist: Optional[str] = None) -> Optional[str]:
         if not line.startswith('sec:'):
             continue
         _, _, _, _, keyid, _, expires, _ = line.split(':', 7)
-        if t > float(expires):
+        # Reject keys that are already expired or are due to expire within
+        # the next 24h.
+        if t + 24 * 60 * 60 > float(expires):
             continue
         keys[keyid] = float(expires) - t
     return min(keys, key=keys.get) if keys else None
