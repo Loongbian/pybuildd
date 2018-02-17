@@ -27,6 +27,7 @@ import yaml
 _ARCHIVE_TO_DUPLOAD_TARGET = {
     'debian': 'rsync-ftp-master',
     'debian-security': 'rsync-security',
+    'debian-ports': 'rsync-ports',
 }
 
 
