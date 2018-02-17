@@ -21,8 +21,14 @@ import subprocess
 import time
 import yaml
 
+_ARCHIVE_TO_DUPLOAD_TARGET = {
+    'debian': 'rsync-ftp-master',
+    'debian-security': 'rsync-security',
+}
+
 
 class Package:
+    #architecture: Optional[str]
     #distribution: Optional[str]
     #build_dep_resolver: Optional[str]
     #mail_logs: Optional[str]
@@ -48,6 +54,8 @@ class Package:
     def __init__(self, name, fields):
         self.name = name
         self.source_package, self.version = fields['pkg-ver'].split('_', 2)
+        self.epochless_version = self.version.split(':')[
+            1] if ':' in self.version else self.version
         for yaml_field, attr_name in self._FIELD_MAP.items():
             setattr(self, attr_name, fields[yaml_field]
                     if yaml_field in fields else None)
@@ -175,11 +183,16 @@ class Builder:
         while True:
             yield self._get_next_wb()
 
+    def _build_dir(self, pkg: Package):
+        return os.path.join(
+            os.path.expanduser('~/build'),
+            '{p.source_package}_{p.epochless_version}'.format(p=pkg))
+
     def build(self, pkg: Package):
         """Builds a package using sbuild."""
         logging.info('Building %s...', pkg)
         logging.debug('Metadata: %s', vars(pkg))
-        build_dir = os.path.expanduser('~/build')
+        build_dir = self._build_dir(pkg)
         os.makedirs(build_dir, exist_ok=True)
         args = [
             'sbuild',
@@ -224,6 +237,26 @@ class Builder:
             pkg.distribution,
             '--' + result,
             '{p.source_package}_{p.version}'.format(p=pkg))
+        return True if result == 'built' else False
+
+    def upload(self, pkg: Package):
+        if pkg.archive not in _ARCHIVE_TO_DUPLOAD_TARGET:
+            logging.error('Could not upload to %s: target not hardcoded.',
+                          pkg.archive)
+        target = _ARCHIVE_TO_DUPLOAD_TARGET[pkg.archive]
+        subprocess.run(
+            [
+                'dupload', '--to', target,
+                '{p.source_package}_{p.epochless_version}_{p.architecture}.changes'.
+                format(p=pkg)
+            ],
+            check=True,
+            cwd=self.build_dir(pkg))
+        self._query_wannabuild(
+            pkg.architecture,
+            pkg.distribution,
+            '--uploaded',
+            '{p.source_package}_{p.version}'.format(p=pkg))
 
 
 def main():
@@ -243,7 +276,8 @@ def main():
                          builder.idle_sleep_time)
             time.sleep(builder.idle_sleep_time)
             continue
-        builder.build(pkg)
+        if builder.build(pkg):
+            builder.upload(pkg)
 
 
 if __name__ == '__main__':
