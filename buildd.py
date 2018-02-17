@@ -72,6 +72,38 @@ def _run(args: List[str], check: bool = False) -> Tuple[int, str]:
     return result.returncode, result.stdout.decode('utf-8', 'strict')
 
 
+def _pick_gpg_key(keylist: Optional[str] = None) -> Optional[str]:
+    if keylist is None:
+        _, keylist = _run(
+            args=['gpg', '--with-colons', '--list-secret-keys'], check=True)
+    # There might be multiple secret keys available. Most likely some
+    # of them are already expired and some are not active yet. As a
+    # heuristic pick the key with the closest expiry that is still
+    # valid. The assumption is that a key that has a vastly larger
+    # expiry is new and might not be active on the archive side yet.
+    # Note that this code requires that the expiry is set, which is the
+    # case for all of Debian's production keys.
+    keys = {}  # type: Dict[str, float]
+    t = time.time()
+    for line in keylist.splitlines():
+        if not line.startswith('sec:'):
+            continue
+        _, _, _, _, keyid, _, expires, _ = line.split(':', 7)
+        if t > float(expires):
+            continue
+        keys[keyid] = float(expires) - t
+    return min(keys, key=keys.get) if keys else None
+
+
+class ConfigurationError(RuntimeError):
+    """Invalid configuration found.
+
+    This exception is raised when a configuration invariant has been
+    violated. Note that some configuration like GPG keys has a time-based
+    component to it as well that is continuously retested.
+    """
+
+
 class Builder:
     def __init__(self,
                  config,
@@ -89,29 +121,6 @@ class Builder:
             'maintainer_email',
             '{arch} Build Daemon ({shortname}) <buildd_{arch}-{shortname}@buildd.debian.org>'.
             format(arch=arch, shortname=hostname.split('.')[0]))
-
-    def _pick_gpg_key(self, keylist: Optional[str] = None) -> Optional[str]:
-        if keylist is None:
-            _, keylist = _run(
-                args=['gpg', '--with-colons', '--list-secret-keys'],
-                check=True)
-        # There might be multiple secret keys available. Most likely some
-        # of them are already expired and some are not active yet. As a
-        # heuristic pick the key with the closest expiry that is still
-        # valid. The assumption is that a key that has a vastly larger
-        # expiry is new and might not be active on the archive side yet.
-        # Note that this code requires that the expiry is set, which is the
-        # case for all of Debian's production keys.
-        keys = {}  # type: Dict[str, float]
-        t = time.time()
-        for line in keylist.splitlines():
-            if not line.startswith('sec:'):
-                continue
-            _, _, _, _, keyid, _, expires, _ = line.split(':', 7)
-            if t > float(expires):
-                continue
-            keys[keyid] = float(expires) - t
-        return min(keys, key=keys.get) if keys else None
 
     @property
     def _mail_from_email(self) -> str:
@@ -183,6 +192,8 @@ class Builder:
     def builds(self) -> Iterator[Package]:
         """Returns an iterator of packages to build."""
         while True:
+            if _pick_gpg_key() is None:
+                raise ConfigurationError('No valid GPG signing key found.')
             yield self._get_next_wb()
 
     def _build_dir(self, pkg: Package):
@@ -206,7 +217,7 @@ class Builder:
             '--sbuild-mode=buildd',
             '--mailfrom=' + self._mail_from_email,
             '--maintainer=' + self.maintainer_email,
-            '--keyid=' + self._pick_gpg_key(),
+            '--keyid=' + _pick_gpg_key(),
         ]
         if pkg.architecture != 'all':
             args.append('--arch=' + pkg.architecture)

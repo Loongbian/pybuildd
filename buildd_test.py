@@ -82,7 +82,8 @@ class BuilderTest(unittest.TestCase):
         self.builder = buildd.Builder(self.config)
 
     @patch('subprocess.run', side_effect=[_WB_LIST_OUTPUT, _WB_TAKE_OUTPUT])
-    def test_builds(self, mock_run):
+    @patch('buildd._pick_gpg_key', return_value='ABCDEF1234567890')
+    def test_builds(self, mock_pick_gpg_key, mock_run):
         pkg = next(self.builder.builds())
         mock_run.assert_has_calls([
             call(
@@ -110,26 +111,15 @@ class BuilderTest(unittest.TestCase):
             _WB_LIST_OUTPUT, _WB_TAKE_FAILED_OUTPUT, _WB_LIST_OUTPUT,
             _WB_TAKE_OUTPUT
         ])
-    def test_builds_take_failed(self, mock_run):
+    @patch('buildd._pick_gpg_key', return_value='ABCDEF1234567890')
+    def test_builds_take_failed(self, mock_pick_gpg_key, mock_run):
         pkg = next(self.builder.builds())
         self.assertEqual(pkg.source_package, 'chasquid')
 
     @patch('subprocess.run', side_effect=[_WB_LIST_EMPTY_OUTPUT] * 4)
-    def test_builds_empty_output(self, mock_run):
+    @patch('buildd._pick_gpg_key', return_value='ABCDEF1234567890')
+    def test_builds_empty_output(self, mock_pick_gpg_key, mock_run):
         self.assertEqual(next(self.builder.builds()), None)
-
-    def test_gpg_key_selection(self):
-        # Two active keys. Picks the one with the smallest TTL.
-        with patch('time.time', return_value=1500000000):
-            self.assertEqual('DFE4C0B481F37BDB',
-                             self.builder._pick_gpg_key(_GPG_KEYLIST))
-        # One active key some time later.
-        with patch('time.time', return_value=1518458890.395519):
-            self.assertEqual('135DC390E4032D36',
-                             self.builder._pick_gpg_key(_GPG_KEYLIST))
-        # A year later: no active key.
-        with patch('time.time', return_value=1549994890.395519):
-            self.assertEqual(None, self.builder._pick_gpg_key(_GPG_KEYLIST))
 
     def test_email_addresses(self):
         builder = buildd.Builder(self.config, arch='arch', hostname='host')
@@ -139,6 +129,21 @@ class BuilderTest(unittest.TestCase):
         with patch('getpass.getuser', return_value='user'):
             self.assertEqual('buildd on host <user@host>',
                              builder._mail_from_email)
+
+
+class BuilddTest(unittest.TestCase):
+    def test_gpg_key_selection(self):
+        # Two active keys. Picks the one with the smallest TTL.
+        with patch('time.time', return_value=1500000000):
+            self.assertEqual('DFE4C0B481F37BDB',
+                             buildd._pick_gpg_key(_GPG_KEYLIST))
+        # One active key some time later.
+        with patch('time.time', return_value=1518458890.395519):
+            self.assertEqual('135DC390E4032D36',
+                             buildd._pick_gpg_key(_GPG_KEYLIST))
+        # A year later: no active key.
+        with patch('time.time', return_value=1549994890.395519):
+            self.assertEqual(None, buildd._pick_gpg_key(_GPG_KEYLIST))
 
 
 if __name__ == '__main__':
