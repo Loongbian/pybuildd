@@ -256,12 +256,19 @@ class Builder:
             '{p.source_package}_{p.version}'.format(p=pkg))
         return True if result == 'built' else False
 
-    @retry(stop_max_attempt_number=3, wait_fixed=2 * 60)
+    @retry(stop_max_attempt_number=3, wait_fixed=2 * 60 * 1000)
     def _run_dupload(self, target, cwd, filename):
-        subprocess.run(
-            ['dupload', '--to', target, filename], check=True, cwd=cwd)
+        try:
+            subprocess.run(
+                ['dupload', '--to', target, filename], check=True, cwd=cwd)
+        except:
+            # retrying has a logger attribute but the version in Debian
+            # Stretch is too old.
+            logging.exception('Failed to call dupload successfully.')
+            raise
 
     def upload(self, pkg: Package):
+        logging.info('Uploading %s...', pkg)
         if pkg.archive not in _ARCHIVE_TO_DUPLOAD_TARGET:
             logging.error('Could not upload to %s: target not hardcoded.',
                           pkg.archive)
