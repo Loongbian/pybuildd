@@ -16,6 +16,7 @@ import getpass
 import logging
 import os
 import platform
+import shutil
 import socket
 import subprocess
 import time
@@ -301,6 +302,10 @@ class Builder:
                 '{p.source_package}_{p.version}'.format(p=pkg))
             raise
 
+    def cleanup(self, pkg: Package):
+        if os.path.exists(self._build_dir(pkg)):
+            shutil.rmtree(self._build_dir(pkg))
+
 
 def main():
     logging.basicConfig(
@@ -319,8 +324,11 @@ def main():
                          builder.idle_sleep_time)
             time.sleep(builder.idle_sleep_time)
             continue
-        if builder.build(pkg):
-            builder.upload(pkg)
+        try:
+            if builder.build(pkg):
+                builder.upload(pkg)
+        finally:
+            builder.cleanup(pkg)
 
 
 if __name__ == '__main__':
