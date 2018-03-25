@@ -218,6 +218,7 @@ class Builder:
             '--apt-update',
             '--no-apt-upgrade',
             '--no-apt-distupgrade',
+            '--no-run-lintian',
             '--batch',
             '--dist=' + pkg.distribution,
             '--sbuild-mode=buildd',
