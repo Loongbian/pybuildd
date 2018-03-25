@@ -227,7 +227,7 @@ class Builder:
             '--keyid=' + _pick_gpg_key(),
         ]
         if pkg.architecture != 'all':
-            args.append('--arch=' + pkg.architecture)
+            args.extend(['--arch={}'.format(pkg.architecture), '--no-arch-all'])
         else:
             args.extend(['--arch-all', '--no-arch-any'])
         if pkg.build_dep_resolver:
