@@ -7,10 +7,9 @@ After=buildd-ssh-master.service
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/buildd
-WorkingDirectory=~
-User=buildd
+ExecStart=%h/pybuildd/buildd.py
+WorkingDirectory=%h
 Restart=always
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target
