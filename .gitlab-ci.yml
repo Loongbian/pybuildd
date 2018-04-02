@@ -3,12 +3,12 @@ stretch:
   script:
     - apt-get -q update
     - apt-get -q -y dist-upgrade
-    - apt-get -q -y install python3-yaml
+    - apt-get -q -y install python3-yaml python3-retrying
     - ./buildd_test.py
 sid:
   image: debian:sid
   script:
     - apt-get -q update
     - apt-get -q -y dist-upgrade
-    - apt-get -q -y install python3-yaml
+    - apt-get -q -y install python3-yaml python3-retrying
     - ./buildd_test.py
