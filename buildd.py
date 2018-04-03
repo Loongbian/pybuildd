@@ -32,14 +32,15 @@ _ARCHIVE_TO_DUPLOAD_TARGET = {
 
 
 class Package:
-    #architecture: Optional[str]
-    #distribution: Optional[str]
-    #build_dep_resolver: Optional[str]
-    #mail_logs: Optional[str]
-    #binnmu: Optional[int]
-    #binnmu_changelog: Optional[str]
-    #extra_depends: Optional[str]
-    #extra_conflicts: Optional[str]
+    archive = None  # type: Optional[str]
+    architecture = None  # type: Optional[str]
+    distribution = None  # type: Optional[str]
+    build_dep_resolver = None  # type: Optional[str]
+    mail_logs = None  # type: Optional[str]
+    binnmu = None  # type: Optional[int]
+    binnmu_changelog = None  # type: Optional[str]
+    extra_depends = None  # type: Optional[str]
+    extra_conflicts = None  # type: Optional[str]
 
     # _FIELD_MAP maps YAML fields as returned by wanna-build's take operation
     # to attributes on the object.
@@ -92,7 +93,9 @@ def _pick_gpg_key(keylist: Optional[str] = None) -> Optional[str]:
     for line in keylist.splitlines():
         if not line.startswith('sec:'):
             continue
-        _, _, _, _, keyid, _, expires, _ = line.split(':', 7)
+        parts = line.split(':', 7)
+        keyid = parts[4]
+        expires = parts[6]
         # Reject keys that are already expired or are due to expire within
         # the next 24h.
         if t + 24 * 60 * 60 > float(expires):
