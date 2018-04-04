@@ -123,9 +123,11 @@ class BuilderTest(unittest.TestCase):
 
     def test_email_addresses(self):
         builder = buildd.Builder(self.config, arch='arch', hostname='host')
+        pkg = buildd.Package(builder, 'pkg', {'pkg-ver': 'pkg_1.2-3',
+                                              'arch': 'arch'})
         self.assertEqual(
             'arch Build Daemon (host) <buildd_arch-host@buildd.debian.org>',
-            builder.maintainer_email)
+            pkg.maintainer_email)
         with patch('getpass.getuser', return_value='user'):
             self.assertEqual('buildd on host <user@host>',
                              builder._mail_from_email)

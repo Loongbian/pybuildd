@@ -56,7 +56,7 @@ class Package:
         'extra-conflicts': 'extra_conflicts',
     }
 
-    def __init__(self, name, fields):
+    def __init__(self, builder, name, fields):
         self.name = name
         self.source_package, self.version = fields['pkg-ver'].split('_', 2)
         self.epochless_version = self.version.split(':')[
@@ -64,6 +64,8 @@ class Package:
         for yaml_field, attr_name in self._FIELD_MAP.items():
             setattr(self, attr_name, fields[yaml_field]
                     if yaml_field in fields else None)
+        self.maintainer_email = builder.maintainer_email_template.format(
+            pkg=self, builder=builder)
 
     def __str__(self):
         return '{p.source_package}_{p.version}'.format(p=self)
@@ -126,10 +128,11 @@ class Builder:
         self.distributions = config['distributions'].split(' ')
         self.idle_sleep_time = config.get('idle_sleep_time', 60)  # seconds
         self.hostname = hostname
-        self.maintainer_email = config.get(
-            'maintainer_email',
-            '{arch} Build Daemon ({shortname}) <buildd_{arch}-{shortname}@buildd.debian.org>'.
-            format(arch=arch, shortname=hostname.split('.')[0]))
+        self.short_hostname = hostname.split('.')[0]
+        self.maintainer_email_template = config.get(
+            'maintainer_email_template',
+            '{pkg.architecture} Build Daemon ({builder.short_hostname}) '
+            '<buildd_{pkg.architecture}-{builder.short_hostname}@buildd.debian.org>')
 
     @property
     def _mail_from_email(self) -> str:
@@ -169,7 +172,7 @@ class Builder:
             break
         if data['status'] != 'ok':
             return None
-        return Package(source_package, data)
+        return Package(self, source_package, data)
 
     def _take(self, line: str) -> Optional[Package]:
         archdistpkgver, _ = line.split(' ', 2)
@@ -226,7 +229,7 @@ class Builder:
             '--dist=' + pkg.distribution,
             '--sbuild-mode=buildd',
             '--mailfrom=' + self._mail_from_email,
-            '--maintainer=' + self.maintainer_email,
+            '--maintainer=' + pkg.maintainer_email,
             '--keyid=' + _pick_gpg_key(),
         ]
         if pkg.architecture != 'all':
