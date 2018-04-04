@@ -1,7 +1,6 @@
 [Unit]
 Description=Debian buildd
-StartLimitIntervalSec=1min
-StartLimitBurst=5
+StartLimitIntervalSec=0
 Requires=buildd-ssh-master.service
 After=buildd-ssh-master.service
 
@@ -10,6 +9,7 @@ Type=simple
 ExecStart=%h/pybuildd/buildd.py
 WorkingDirectory=%h
 Restart=always
+RestartSec=10
 
 [Install]
 WantedBy=default.target
