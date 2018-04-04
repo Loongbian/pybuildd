@@ -118,7 +118,6 @@ class ConfigurationError(RuntimeError):
 class Builder:
     def __init__(self,
                  config,
-                 arch=platform.machine(),
                  hostname=socket.getfqdn()):
         self.wb_ssh_user = config.get('wb_ssh_user', 'wb-buildd')
         self.wb_ssh_socket = config.get('wb_ssh_socket',

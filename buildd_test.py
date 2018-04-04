@@ -122,7 +122,7 @@ class BuilderTest(unittest.TestCase):
         self.assertEqual(next(self.builder.builds()), None)
 
     def test_email_addresses(self):
-        builder = buildd.Builder(self.config, arch='arch', hostname='host')
+        builder = buildd.Builder(self.config, hostname='host')
         pkg = buildd.Package(builder, 'pkg', {'pkg-ver': 'pkg_1.2-3',
                                               'arch': 'arch'})
         self.assertEqual(
