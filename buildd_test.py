@@ -57,7 +57,7 @@ rvk:::17::::::E820094883974FDC3CD00EC699D399A1EC36A185:80:
 rvk:::1::::::E5E52560DD91C556DDBDA5D02064C53641C25E5D:80:
 fpr:::::::::091BC8E250417B2041F990ACB424EB74051F4844:
 grp:::::::::2FF5C26CCC68B2EB11D375867645326471566E1B:
-uid:e::::1398721900::846EE2E487D23670F70426952DD6DBEC80B2CE92::buildd key:
+uid:e::::1398721900::846EE2E487D23670F70426952DD6DBEC80B2CE92::buildd key <buildd_arch-hostname@example.com>:
 sec:e:4096:1:DFE4C0B481F37BDB:1468787574:1500323574::u:::sc:::+::::
 rvk:::1::::::F75FBFCD771DEB5E9C86050550C3634D3A291CF9:80:
 rvk:::1::::::010BF4B922AC26888C4F895F49BB63F18B4CCAD5:80:
@@ -65,12 +65,16 @@ rvk:::1::::::E5E52560DD91C556DDBDA5D02064C53641C25E5D:80:
 rvk:::1::::::77462642A9EF94FD0F77196DBA9C78061DDD8C9B:80:
 fpr:::::::::4881416785E6EE2DB59A5C72DFE4C0B481F37BDB:
 grp:::::::::FB514081A41735566929601BD58899ABAFA56139:
-uid:e::::1468787574::846EE2E487D23670F70426952DD6DBEC80B2CE92::buildd key:
+uid:e::::1468787574::846EE2E487D23670F70426952DD6DBEC80B2CE92::buildd key <buildd_arch-hostname@example.com>:
 sec:u:4096:1:135DC390E4032D36:1499637849:1531173849::u:::scSC:::+::::
 fpr:::::::::69C17C61AF2936B6C0FD18C4135DC390E4032D36:
 grp:::::::::7FFC1B09E39CCB591264F8B8D708B0A624526ACD:
-uid:u::::1499637849::846EE2E487D23670F70426952DD6DBEC80B2CE92::buildd key:
+uid:u::::1499637849::846EE2E487D23670F70426952DD6DBEC80B2CE92::buildd key <buildd_arch-hostname@example.com>:
 """
+_MOCK_DEFAULT_KEY = buildd.Key(
+        keyid='DFE4C0B481F37BDB',
+        expiry=0,
+        email='buildd_arch-hostname@example.com')
 
 
 class BuilderTest(unittest.TestCase):
@@ -111,13 +115,13 @@ class BuilderTest(unittest.TestCase):
             _WB_LIST_OUTPUT, _WB_TAKE_FAILED_OUTPUT, _WB_LIST_OUTPUT,
             _WB_TAKE_OUTPUT
         ])
-    @patch('buildd._pick_gpg_key', return_value='ABCDEF1234567890')
+    @patch('buildd._pick_gpg_key', return_value=_MOCK_DEFAULT_KEY)
     def test_builds_take_failed(self, mock_pick_gpg_key, mock_run):
         pkg = next(self.builder.builds())
         self.assertEqual(pkg.source_package, 'chasquid')
 
     @patch('subprocess.run', side_effect=[_WB_LIST_EMPTY_OUTPUT] * 4)
-    @patch('buildd._pick_gpg_key', return_value='ABCDEF1234567890')
+    @patch('buildd._pick_gpg_key', return_value=_MOCK_DEFAULT_KEY)
     def test_builds_empty_output(self, mock_pick_gpg_key, mock_run):
         self.assertEqual(next(self.builder.builds()), None)
 
@@ -127,22 +131,41 @@ class BuilderTest(unittest.TestCase):
                                               'arch': 'arch'})
         self.assertEqual(
             'arch Build Daemon (host) <buildd_arch-host@buildd.debian.org>',
-            pkg.maintainer_email)
+            pkg.maintainer_email(buildd.Key(email='buildd_arch-host@buildd.debian.org')))
         with patch('getpass.getuser', return_value='user'):
             self.assertEqual('buildd on host <user@host>',
                              builder._mail_from_email)
+
+    @patch('buildd._pick_gpg_key', return_value=_MOCK_DEFAULT_KEY)
+    def test_construct_sbuild_cmd(self, mock_pick_gpg_key):
+        builder = buildd.Builder(self.config, hostname='host')
+        pkg = buildd.Package(builder, 'pkg', {'pkg-ver': 'pkg_1.2-3',
+                                              'arch': 'arch',
+                                              'suite': 'sid',
+                                              'extra-depends': 'glibc (>> 1)'})
+        cmd = builder._construct_sbuild_cmd(pkg)
+        self.assertEqual('sbuild', cmd[0])
+        self.assertIn('--dist=sid', cmd)
+        self.assertIn('--maintainer=arch Build Daemon (host) '
+                      '<buildd_arch-hostname@example.com>', cmd)
+        self.assertIn('--keyid=DFE4C0B481F37BDB', cmd)
+        self.assertIn('--add-depends=glibc (>> 1)', cmd)
 
 
 class BuilddTest(unittest.TestCase):
     def test_gpg_key_selection(self):
         # Two active keys. Picks the one with the smallest TTL.
         with patch('time.time', return_value=1500000000):
-            self.assertEqual('DFE4C0B481F37BDB',
-                             buildd._pick_gpg_key(_GPG_KEYLIST))
+            key = buildd._pick_gpg_key(_GPG_KEYLIST)
+            self.assertEqual('DFE4C0B481F37BDB', key.keyid)
+            self.assertEqual(1500323574.0-1500000000, key.expiry)
+            self.assertEqual('buildd_arch-hostname@example.com', key.email)
         # One active key some time later.
         with patch('time.time', return_value=1518458890.395519):
-            self.assertEqual('135DC390E4032D36',
-                             buildd._pick_gpg_key(_GPG_KEYLIST))
+            key = buildd._pick_gpg_key(_GPG_KEYLIST)
+            self.assertEqual('135DC390E4032D36', key.keyid)
+            self.assertEqual(1531173849-1518458890.395519, key.expiry)
+            self.assertEqual('buildd_arch-hostname@example.com', key.email)
         # A year later: no active key.
         with patch('time.time', return_value=1549994890.395519):
             self.assertEqual(None, buildd._pick_gpg_key(_GPG_KEYLIST))

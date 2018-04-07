@@ -12,6 +12,7 @@ from typing import Dict, Iterator, List, Optional, Tuple
 
 import collections
 import configparser
+import email.utils
 import getpass
 import logging
 import os
@@ -29,6 +30,13 @@ _ARCHIVE_TO_DUPLOAD_TARGET = {
     'debian-security': 'rsync-security',
     'debian-ports': 'rsync-ports',
 }
+
+
+class Key:
+    def __init__(self, keyid: Optional[str]=None, expiry: Optional[float]=None, email: Optional[str]=None) -> None:
+        self.keyid = keyid
+        self.expiry = expiry
+        self.email = email
 
 
 class Package:
@@ -56,7 +64,8 @@ class Package:
         'extra-conflicts': 'extra_conflicts',
     }
 
-    def __init__(self, builder, name, fields):
+    def __init__(self, builder, name: str, fields: Dict[str, str]) -> None:
+        self.builder = builder
         self.name = name
         self.source_package, self.version = fields['pkg-ver'].split('_', 2)
         self.epochless_version = self.version.split(':')[
@@ -64,11 +73,13 @@ class Package:
         for yaml_field, attr_name in self._FIELD_MAP.items():
             setattr(self, attr_name, fields[yaml_field]
                     if yaml_field in fields else None)
-        self.maintainer_email = builder.maintainer_email_template.format(
-            pkg=self, builder=builder)
 
     def __str__(self):
         return '{p.source_package}_{p.version}'.format(p=self)
+
+    def maintainer_email(self, key: Key):
+        return self.builder.maintainer_email_template.format(
+            pkg=self, builder=self.builder, key=key)
 
 
 def _run(args: List[str], check: bool = False) -> Tuple[int, str]:
@@ -79,7 +90,7 @@ def _run(args: List[str], check: bool = False) -> Tuple[int, str]:
     return result.returncode, result.stdout.decode('utf-8', 'strict')
 
 
-def _pick_gpg_key(keylist: Optional[str] = None) -> Optional[str]:
+def _pick_gpg_key(keylist: Optional[str] = None) -> Optional[Key]:
     if keylist is None:
         _, keylist = _run(
             args=['gpg', '--with-colons', '--list-secret-keys'], check=True)
@@ -90,9 +101,15 @@ def _pick_gpg_key(keylist: Optional[str] = None) -> Optional[str]:
     # expiry is new and might not be active on the archive side yet.
     # Note that this code requires that the expiry is set, which is the
     # case for all of Debian's production keys.
-    keys = {}  # type: Dict[str, float]
+    keys = {}  # type: Dict[str, Key]
     t = time.time()
+    last_keyid = None  # type: Optional[str]
     for line in keylist.splitlines():
+        if line.startswith('uid:') and last_keyid:
+            uid = line.split(':', 10)[9]
+            realname, email_address = email.utils.parseaddr(uid)
+            keys[last_keyid].email = email_address
+            continue
         if not line.startswith('sec:'):
             continue
         parts = line.split(':', 7)
@@ -102,8 +119,12 @@ def _pick_gpg_key(keylist: Optional[str] = None) -> Optional[str]:
         # the next 24h.
         if t + 24 * 60 * 60 > float(expires):
             continue
-        keys[keyid] = float(expires) - t
-    return min(keys, key=keys.get) if keys else None
+        keys[keyid] = Key(keyid=keyid, expiry=float(expires) - t)
+        last_keyid = keyid
+    if not keys:
+        return None
+    keyid = min(keys, key=lambda k: keys.get(k).expiry)
+    return keys[keyid]
 
 
 class ConfigurationError(RuntimeError):
@@ -131,7 +152,7 @@ class Builder:
         self.maintainer_email_template = config.get(
             'maintainer_email_template',
             '{pkg.architecture} Build Daemon ({builder.short_hostname}) '
-            '<buildd_{pkg.architecture}-{builder.short_hostname}@buildd.debian.org>')
+            '<{key.email}>')
 
     @property
     def _mail_from_email(self) -> str:
@@ -212,13 +233,9 @@ class Builder:
             os.path.expanduser('~/build'),
             '{p.source_package}_{p.epochless_version}'.format(p=pkg))
 
-    def build(self, pkg: Package):
-        """Builds a package using sbuild."""
-        logging.info('Building %s...', pkg)
-        logging.debug('Metadata: %s', vars(pkg))
-        build_dir = self._build_dir(pkg)
-        os.makedirs(build_dir, exist_ok=True)
-        args = [
+    def _construct_sbuild_cmd(self, pkg: Package) -> List[str]:
+        key = _pick_gpg_key()
+        cmd = [
             'sbuild',
             '--apt-update',
             '--no-apt-upgrade',
@@ -228,26 +245,35 @@ class Builder:
             '--dist=' + pkg.distribution,
             '--sbuild-mode=buildd',
             '--mailfrom=' + self._mail_from_email,
-            '--maintainer=' + pkg.maintainer_email,
-            '--keyid=' + _pick_gpg_key(),
+            '--maintainer=' + pkg.maintainer_email(key),
+            '--keyid=' + key.keyid,
         ]
         if pkg.architecture != 'all':
-            args.extend(['--arch={}'.format(pkg.architecture), '--no-arch-all'])
+            cmd.extend(['--arch={}'.format(pkg.architecture), '--no-arch-all'])
         else:
-            args.extend(['--arch-all', '--no-arch-any'])
+            cmd.extend(['--arch-all', '--no-arch-any'])
         if pkg.build_dep_resolver:
-            args.append('--build-dep-resolver=' + pkg.build_dep_resolver)
+            cmd.append('--build-dep-resolver=' + pkg.build_dep_resolver)
         if pkg.mail_logs:
-            args.append('--mail-log-to=' + pkg.mail_logs)
+            cmd.append('--mail-log-to=' + pkg.mail_logs)
         if pkg.binnmu:
-            args.append('--binNMU={}'.format(pkg.binnmu))
-            args.append('--make-binNMU=' + pkg.binnmu_changelog)
+            cmd.append('--binNMU={}'.format(pkg.binnmu))
+            cmd.append('--make-binNMU=' + pkg.binnmu_changelog)
         if pkg.extra_depends:
-            args.append('--add-depends=' + pkg.extra_depends)
+            cmd.append('--add-depends=' + pkg.extra_depends)
         if pkg.extra_conflicts:
-            args.append('--add-conflicts=' + pkg.extra_conflicts)
-        args.append('{p.source_package}_{p.version}'.format(p=pkg))
-        rc = subprocess.run(args, cwd=build_dir).returncode
+            cmd.append('--add-conflicts=' + pkg.extra_conflicts)
+        cmd.append('{p.source_package}_{p.version}'.format(p=pkg))
+        return cmd
+
+    def build(self, pkg: Package):
+        """Builds a package using sbuild."""
+        logging.info('Building %s...', pkg)
+        logging.debug('Metadata: %s', vars(pkg))
+        build_dir = self._build_dir(pkg)
+        os.makedirs(build_dir, exist_ok=True)
+        cmd = self._construct_sbuild_cmd(pkg)
+        rc = subprocess.run(cmd, cwd=build_dir).returncode
         if rc == 0:
             logging.info('Build of %s succeeded.', pkg)
             result = 'built'
