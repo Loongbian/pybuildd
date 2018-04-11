@@ -37,6 +37,32 @@ _WB_TAKE_OUTPUT = subprocess.CompletedProcess(
     -
       mail_logs: logs@example.com
 """)
+_WB_TAKE_EPOCH_NMU_OUTPUT = subprocess.CompletedProcess(
+    args=[],
+    returncode=0,
+    stdout=b"""\
+---
+-
+  calligra:
+    -
+      status: ok
+    -
+      pkg-ver: chasquid_1:0.04-1
+    -
+      suite: sid
+    -
+      arch: amd64
+    -
+      archive: debian
+    -
+      build_dep_resolver: aptitude
+    -
+      mail_logs: logs@example.com
+    -
+      binNMU: 1
+    -
+      extra-changelog: 'Rebuild against libfoo2.'
+""")
 _WB_TAKE_FAILED_OUTPUT = subprocess.CompletedProcess(
     args=[],
     returncode=0,
@@ -104,7 +130,9 @@ class BuilderTest(unittest.TestCase):
         self.assertEqual(pkg.architecture, 'amd64')
         self.assertEqual(pkg.distribution, 'sid')
         self.assertEqual(pkg.source_package, 'chasquid')
-        self.assertEqual(pkg.version, '0.04-1')
+        self.assertEqual(pkg.source_version, '0.04-1')
+        self.assertEqual(pkg.binary_version, '0.04-1')
+        self.assertEqual(pkg.changes_file, 'chasquid_0.04-1_amd64.changes')
         self.assertEqual(pkg.archive, 'debian')
         self.assertEqual(pkg.build_dep_resolver, 'aptitude')
         self.assertEqual(pkg.mail_logs, 'logs@example.com')
@@ -124,6 +152,22 @@ class BuilderTest(unittest.TestCase):
     @patch('buildd._pick_gpg_key', return_value=_MOCK_DEFAULT_KEY)
     def test_builds_empty_output(self, mock_pick_gpg_key, mock_run):
         self.assertEqual(next(self.builder.builds()), None)
+
+    @patch('subprocess.run', side_effect=[_WB_LIST_OUTPUT, _WB_TAKE_EPOCH_NMU_OUTPUT])
+    @patch('buildd._pick_gpg_key', return_value='ABCDEF1234567890')
+    def test_epoch_nmu_builds(self, mock_pick_gpg_key, mock_run):
+        pkg = next(self.builder.builds())
+        self.assertEqual(pkg.architecture, 'amd64')
+        self.assertEqual(pkg.distribution, 'sid')
+        self.assertEqual(pkg.source_package, 'chasquid')
+        self.assertEqual(pkg.source_version, '1:0.04-1')
+        self.assertEqual(pkg.binary_version, '1:0.04-1+b1')
+        self.assertEqual(pkg.epochless_source_version, '0.04-1')
+        self.assertEqual(pkg.epochless_binary_version, '0.04-1+b1')
+        self.assertEqual(pkg.changes_file, 'chasquid_0.04-1+b1_amd64.changes')
+        self.assertEqual(pkg.archive, 'debian')
+        self.assertEqual(pkg.build_dep_resolver, 'aptitude')
+        self.assertEqual(pkg.mail_logs, 'logs@example.com')
 
     def test_email_addresses(self):
         builder = buildd.Builder(self.config, hostname='host')
