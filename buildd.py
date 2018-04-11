@@ -67,15 +67,28 @@ class Package:
     def __init__(self, builder, name: str, fields: Dict[str, str]) -> None:
         self.builder = builder
         self.name = name
-        self.source_package, self.version = fields['pkg-ver'].split('_', 2)
-        self.epochless_version = self.version.split(':')[
-            1] if ':' in self.version else self.version
+        self.source_package, self.source_version = fields['pkg-ver'].split('_', 2)
+        self.epochless_source_version = self.source_version.split(':')[
+            1] if ':' in self.source_version else self.source_version
         for yaml_field, attr_name in self._FIELD_MAP.items():
             setattr(self, attr_name, fields[yaml_field]
                     if yaml_field in fields else None)
 
+        self.binary_version = self.source_version
+        self.epochless_binary_version = self.epochless_source_version
+        if self.binnmu:
+            binnmu_suffix = '+b{}'.format(self.binnmu)
+            self.binary_version += binnmu_suffix
+            self.epochless_binary_version += binnmu_suffix
+
+        self.source_package_version = \
+            '{p.source_package}_{p.source_version}'.format(p=self)
+        self.changes_file = \
+            '{p.source_package}_{p.epochless_binary_version}_{p.architecture}.changes' \
+                .format(p=self)
+
     def __str__(self):
-        return '{p.source_package}_{p.version}'.format(p=self)
+        return '{p.source_package}_{p.binary_version}'.format(p=self)
 
     def maintainer_email(self, key: Key):
         return self.builder.maintainer_email_template.format(
@@ -231,7 +244,7 @@ class Builder:
     def _build_dir(self, pkg: Package):
         return os.path.join(
             os.path.expanduser('~/build'),
-            '{p.source_package}_{p.epochless_version}'.format(p=pkg))
+            '{p.source_package}_{p.epochless_source_version}'.format(p=pkg))
 
     def _construct_sbuild_cmd(self, pkg: Package) -> List[str]:
         key = _pick_gpg_key()
@@ -263,7 +276,7 @@ class Builder:
             cmd.append('--add-depends=' + pkg.extra_depends)
         if pkg.extra_conflicts:
             cmd.append('--add-conflicts=' + pkg.extra_conflicts)
-        cmd.append('{p.source_package}_{p.version}'.format(p=pkg))
+        cmd.append(pkg.source_package_version)
         return cmd
 
     def build(self, pkg: Package):
@@ -287,7 +300,7 @@ class Builder:
             pkg.architecture,
             pkg.distribution,
             '--' + result,
-            '{p.source_package}_{p.version}'.format(p=pkg))
+            pkg.source_package_version)
         return True if result == 'built' else False
 
     @retry(stop_max_attempt_number=3, wait_fixed=2 * 60 * 1000)
@@ -312,19 +325,18 @@ class Builder:
             self._run_dupload(
                 target,
                 self._build_dir(pkg),
-                '{p.source_package}_{p.epochless_version}_{p.architecture}.changes'.
-                format(p=pkg))
+                pkg.changes_file)
             self._query_wannabuild(
                 pkg.architecture,
                 pkg.distribution,
                 '--uploaded',
-                '{p.source_package}_{p.version}'.format(p=pkg))
+                pkg.source_package_version)
         except:
             self._query_wannabuild(
                 pkg.architecture,
                 pkg.distribution,
                 '--give-back',
-                '{p.source_package}_{p.version}'.format(p=pkg))
+                pkg.source_package_version)
             raise
 
     def cleanup(self, pkg: Package):
