@@ -18,8 +18,10 @@ import logging
 import os
 import platform
 import shutil
+import signal
 import socket
 import subprocess
+import threading
 import time
 
 from retrying import retry
@@ -354,13 +356,36 @@ def main():
     config.read(['/etc/buildd.conf', os.path.expanduser('~/.buildd.conf')])
     buildd_config = config['buildd'] if 'buildd' in config else {}
     builder = Builder(buildd_config)
-    for pkg in builder.builds():
+
+    exit = threading.Event()
+    def trigger_eventual_exit(signum, frame):
+        logging.info('Signal to exit received.')
+        exit.set()
+    signal.signal(signal.SIGUSR1, trigger_eventual_exit)
+
+    pkgs = builder.builds()
+    while True:
+        # Bail out early in case we were signalled to exit.
+        if exit.is_set():
+            logging.info('Exiting due to signal.')
+            break
+
+        # Get the next item off the queue. This calls out to wanna-build.
+        try:
+            pkg = next(pkgs)
+        except StopIteration:
+            logging.info('No more packages to build; exiting.')
+            break
+
         # If there is nothing to do, back-off for a while.
         if pkg is None:
             logging.info('Nothing to do, sleeping for %d seconds...',
                          builder.idle_sleep_time)
-            time.sleep(builder.idle_sleep_time)
+            if not exit.is_set():
+                exit.wait(builder.idle_sleep_time)
             continue
+
+        # We have something to do, so let's start building.
         try:
             if builder.build(pkg):
                 builder.upload(pkg)
