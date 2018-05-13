@@ -172,10 +172,13 @@ class BuilderTest(unittest.TestCase):
     def test_email_addresses(self):
         builder = buildd.Builder(self.config, hostname='host')
         pkg = buildd.Package(builder, 'pkg', {'pkg-ver': 'pkg_1.2-3',
-                                              'arch': 'arch'})
+                                              'arch': 'arch',
+                                              'archive': 'debian',
+                                              'suite': 'sid'})
         self.assertEqual(
             'arch Build Daemon (host) <buildd_arch-host@buildd.debian.org>',
-            pkg.maintainer_email(buildd.Key(email='buildd_arch-host@buildd.debian.org')))
+            pkg.maintainer_email(buildd.Key(keyid='12345678ABCDEF12',
+                                            email='buildd_arch-host@buildd.debian.org')))
         with patch('getpass.getuser', return_value='user'):
             self.assertEqual('buildd on host <user@host>',
                              builder._mail_from_email)
@@ -185,6 +188,7 @@ class BuilderTest(unittest.TestCase):
         builder = buildd.Builder(self.config, hostname='host')
         pkg = buildd.Package(builder, 'pkg', {'pkg-ver': 'pkg_1.2-3',
                                               'arch': 'arch',
+                                              'archive': 'debian',
                                               'suite': 'sid',
                                               'extra-depends': 'glibc (>> 1)'})
         cmd = builder._construct_sbuild_cmd(pkg)
@@ -212,7 +216,8 @@ class BuilddTest(unittest.TestCase):
             self.assertEqual('buildd_arch-hostname@example.com', key.email)
         # A year later: no active key.
         with patch('time.time', return_value=1549994890.395519):
-            self.assertEqual(None, buildd._pick_gpg_key(_GPG_KEYLIST))
+            with self.assertRaises(buildd.KeyNotFoundError):
+                buildd._pick_gpg_key(_GPG_KEYLIST)
 
 
 if __name__ == '__main__':

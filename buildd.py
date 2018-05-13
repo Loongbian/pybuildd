@@ -35,16 +35,17 @@ _ARCHIVE_TO_DUPLOAD_TARGET = {
 
 
 class Key:
-    def __init__(self, keyid: Optional[str]=None, expiry: Optional[float]=None, email: Optional[str]=None) -> None:
+    def __init__(self, keyid: str, expiry: Optional[float]=None, email: Optional[str]=None) -> None:
         self.keyid = keyid
         self.expiry = expiry
         self.email = email
 
 
+class KeyNotFoundError(Exception):
+    pass
+
+
 class Package:
-    archive = None  # type: Optional[str]
-    architecture = None  # type: Optional[str]
-    distribution = None  # type: Optional[str]
     build_dep_resolver = None  # type: Optional[str]
     mail_logs = None  # type: Optional[str]
     binnmu = None  # type: Optional[int]
@@ -55,9 +56,6 @@ class Package:
     # _FIELD_MAP maps YAML fields as returned by wanna-build's take operation
     # to attributes on the object.
     _FIELD_MAP = {
-        'archive': 'archive',
-        'arch': 'architecture',
-        'suite': 'distribution',
         'build_dep_resolver': 'build_dep_resolver',
         'mail_logs': 'mail_logs',
         'binNMU': 'binnmu',
@@ -72,6 +70,9 @@ class Package:
         self.source_package, self.source_version = fields['pkg-ver'].split('_', 2)
         self.epochless_source_version = self.source_version.split(':')[
             1] if ':' in self.source_version else self.source_version
+        self.archive = fields['archive']
+        self.architecture = fields['arch']
+        self.distribution = fields['suite']
         for yaml_field, attr_name in self._FIELD_MAP.items():
             setattr(self, attr_name, fields[yaml_field]
                     if yaml_field in fields else None)
@@ -105,7 +106,7 @@ def _run(args: List[str], check: bool = False) -> Tuple[int, str]:
     return result.returncode, result.stdout.decode('utf-8', 'strict')
 
 
-def _pick_gpg_key(keylist: Optional[str] = None) -> Optional[Key]:
+def _pick_gpg_key(keylist: Optional[str] = None) -> Key:
     if keylist is None:
         _, keylist = _run(
             args=['gpg', '--with-colons', '--list-secret-keys'], check=True)
@@ -137,8 +138,8 @@ def _pick_gpg_key(keylist: Optional[str] = None) -> Optional[Key]:
         keys[keyid] = Key(keyid=keyid, expiry=float(expires) - t)
         last_keyid = keyid
     if not keys:
-        return None
-    keyid = min(keys, key=lambda k: keys.get(k).expiry)
+        raise KeyNotFoundError('No usable GPG key found.')
+    keyid = min(keys, key=lambda k: keys[k].expiry)
     return keys[keyid]
 
 
@@ -236,7 +237,7 @@ class Builder:
                     return result
         return None
 
-    def builds(self) -> Iterator[Package]:
+    def builds(self) -> Iterator[Optional[Package]]:
         """Returns an iterator of packages to build."""
         while True:
             if _pick_gpg_key() is None:
@@ -271,7 +272,7 @@ class Builder:
             cmd.append('--build-dep-resolver=' + pkg.build_dep_resolver)
         if pkg.mail_logs:
             cmd.append('--mail-log-to=' + pkg.mail_logs)
-        if pkg.binnmu:
+        if pkg.binnmu and pkg.binnmu_changelog:
             cmd.append('--binNMU={}'.format(pkg.binnmu))
             cmd.append('--make-binNMU=' + pkg.binnmu_changelog)
         if pkg.extra_depends:
