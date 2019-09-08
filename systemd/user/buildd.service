@@ -1,7 +1,7 @@
 [Unit]
 Description=Debian buildd
 StartLimitIntervalSec=0
-Requires=buildd-ssh-master.service
+Wants=buildd-ssh-master.service
 After=buildd-ssh-master.service
 
 [Service]
