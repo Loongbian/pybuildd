@@ -4,6 +4,7 @@ StartLimitIntervalSec=0
 
 [Service]
 Type=simple
+ExecStartPre=rm -f buildd.debian.org.ssh
 ExecStart=/usr/bin/ssh -l wb-buildd -S buildd.debian.org.ssh buildd.debian.org -MN
 WorkingDirectory=%h
 Restart=always
