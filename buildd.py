@@ -86,12 +86,14 @@ class Package:
 
         self.source_package_version = \
             '{p.source_package}_{p.source_version}'.format(p=self)
+        self.source_package_binary_version = \
+            '{p.source_package}_{p.binary_version}'.format(p=self)
         self.changes_file = \
             '{p.source_package}_{p.epochless_binary_version}_{p.architecture}.changes' \
                 .format(p=self)
 
     def __str__(self):
-        return '{p.source_package}_{p.binary_version}'.format(p=self)
+        return self.source_package_binary_version
 
     def maintainer_email(self, key: Key):
         return self.builder.maintainer_email_template.format(
@@ -303,7 +305,7 @@ class Builder:
             pkg.architecture,
             pkg.distribution,
             '--' + result,
-            pkg.source_package_version)
+            pkg.source_package_binary_version)
         return True if result == 'built' else False
 
     @retry(stop_max_attempt_number=3, wait_fixed=2 * 60 * 1000)
@@ -333,13 +335,13 @@ class Builder:
                 pkg.architecture,
                 pkg.distribution,
                 '--uploaded',
-                pkg.source_package_version)
+                pkg.source_package_binary_version)
         except:
             self._query_wannabuild(
                 pkg.architecture,
                 pkg.distribution,
                 '--give-back',
-                pkg.source_package_version)
+                pkg.source_package_binary_version)
             raise
 
     def cleanup(self, pkg: Package):
