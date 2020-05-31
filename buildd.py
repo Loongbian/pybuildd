@@ -163,7 +163,7 @@ class Builder:
                                         'buildd.debian.org.ssh')
         self.wb_ssh_host = config.get('wb_ssh_host', 'buildd.debian.org')
         self.architectures = config['architectures'].split(' ')
-        self.distributions = config['distributions'].split(' ')
+        self.distributions = config.get('distributions', 'any').split(' ')
         self.idle_sleep_time = config.get('idle_sleep_time', 60)  # seconds
         self.hostname = hostname
         self.short_hostname = hostname.split('.')[0]
