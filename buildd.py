@@ -308,7 +308,7 @@ class Builder:
             pkg.source_package_binary_version)
         return True if result == 'built' else False
 
-    @retry(stop_max_attempt_number=3, wait_fixed=2 * 60 * 1000)
+    @retry(stop_max_attempt_number=5, wait_fixed=2 * 60 * 1000)
     def _run_dupload(self, target, cwd, filename):
         try:
             subprocess.run(
