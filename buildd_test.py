@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 
+import ctypes
+import ctypes.util
 import unittest
 from unittest.mock import patch, call
+import signal
 import subprocess
+import threading
 
 import buildd
 
@@ -71,6 +75,15 @@ _WB_TAKE_FAILED_OUTPUT = subprocess.CompletedProcess(
     - status: not ok
     - reason: "is up-to-date in the archive; doesn't need rebuilding"
 """)
+_SBUILD_SUCCESSFUL_OUTPUT = subprocess.CompletedProcess(
+    args=[],
+    returncode=0)
+_SBUILD_ATTEMPTED_OUTPUT = subprocess.CompletedProcess(
+    args=[],
+    returncode=2)
+_SBUILD_UNKNOWN_OUTPUT = subprocess.CompletedProcess(
+    args=[],
+    returncode=1)
 # B424EB74051F4844 is a key that expired a long time ago and should
 # hence never be picked. DFE4C0B481F37BDB is the reference key that
 # is still active at the point in time we check. 135DC390E4032D36
@@ -199,6 +212,60 @@ class BuilderTest(unittest.TestCase):
         self.assertIn('--keyid=DFE4C0B481F37BDB', cmd)
         self.assertIn('--add-depends=glibc (>> 1)', cmd)
 
+    @patch('os.makedirs')
+    @patch('buildd._pick_gpg_key', return_value=_MOCK_DEFAULT_KEY)
+    @patch('buildd.Builder._query_wannabuild')
+    @patch('subprocess.run', side_effect=[_SBUILD_SUCCESSFUL_OUTPUT])
+    def test_build_successful(self, mock_makedirs, mock_query_wannabuild,
+                              mock_pick_gpg_key, mock_run):
+        builder = buildd.Builder(self.config)
+        pkg = buildd.Package(builder, 'pkg', {'pkg-ver': 'pkg_1.2-3',
+                                              'arch': 'arch',
+                                              'archive': 'debian',
+                                              'suite': 'sid',
+                                              'extra-depends': 'glibc (>> 1)'})
+        self.assertTrue(builder.build(pkg))
+        self.assertTrue(mock_makedirs.called)
+        self.assertTrue(mock_run.called)
+        mock_query_wannabuild.assert_called_with(
+            'arch', 'sid', '--built', 'pkg_1.2-3')
+
+    @patch('os.makedirs')
+    @patch('buildd._pick_gpg_key', return_value=_MOCK_DEFAULT_KEY)
+    @patch('buildd.Builder._query_wannabuild')
+    @patch('subprocess.run', side_effect=[_SBUILD_ATTEMPTED_OUTPUT])
+    def test_build_attempted(self, mock_makedirs, mock_query_wannabuild,
+                              mock_pick_gpg_key, mock_run):
+        builder = buildd.Builder(self.config)
+        pkg = buildd.Package(builder, 'pkg', {'pkg-ver': 'pkg_1.2-3',
+                                              'arch': 'arch',
+                                              'archive': 'debian',
+                                              'suite': 'sid',
+                                              'extra-depends': 'glibc (>> 1)'})
+        self.assertFalse(builder.build(pkg))
+        self.assertTrue(mock_makedirs.called)
+        self.assertTrue(mock_run.called)
+        mock_query_wannabuild.assert_called_with(
+            'arch', 'sid', '--attempted', 'pkg_1.2-3')
+
+    @patch('os.makedirs')
+    @patch('buildd._pick_gpg_key', return_value=_MOCK_DEFAULT_KEY)
+    @patch('buildd.Builder._query_wannabuild')
+    @patch('subprocess.run', side_effect=[_SBUILD_UNKNOWN_OUTPUT])
+    def test_build_unknown_failure(self, mock_makedirs, mock_query_wannabuild,
+                                   mock_pick_gpg_key, mock_run):
+        builder = buildd.Builder(self.config)
+        pkg = buildd.Package(builder, 'pkg', {'pkg-ver': 'pkg_1.2-3',
+                                              'arch': 'arch',
+                                              'archive': 'debian',
+                                              'suite': 'sid',
+                                              'extra-depends': 'glibc (>> 1)'})
+        self.assertFalse(builder.build(pkg))
+        self.assertTrue(mock_makedirs.called)
+        self.assertTrue(mock_run.called)
+        mock_query_wannabuild.assert_called_with(
+            'arch', 'sid', '--give-back', 'pkg_1.2-3')
+
 
 class BuilddTest(unittest.TestCase):
     def test_gpg_key_selection(self):
@@ -218,6 +285,43 @@ class BuilddTest(unittest.TestCase):
         with patch('time.time', return_value=1549994890.395519):
             with self.assertRaises(buildd.KeyNotFoundError):
                 buildd._pick_gpg_key(_GPG_KEYLIST)
+
+    def test_exit_handler(self):
+        exit = buildd.setup_exit_handler()
+        # TODO: With python3.8, this can be replaced with signal.raise_signal.
+        libc = ctypes.cdll.LoadLibrary(ctypes.util.find_library('c'))
+        getattr(libc, 'raise')(signal.SIGUSR1)
+        self.assertTrue(exit.is_set())
+
+    @patch('buildd.Builder')
+    def test_handle_next_package(self, mock_builder):
+        exit_event = threading.Event()
+        pkg = buildd.Package(mock_builder, 'pkg',
+            {'pkg-ver': 'pkg_1.2-3',
+             'arch': 'arch',
+             'archive': 'debian',
+             'suite': 'sid',
+             'extra-depends': 'glibc (>> 1)'})
+        pkgs = iter([pkg, None])
+        exit_event.set()
+        self.assertFalse(
+          buildd.handle_next_package(mock_builder, pkgs, exit_event))
+        exit_event.clear()
+        self.assertTrue(
+          buildd.handle_next_package(mock_builder, pkgs, exit_event))
+        self.assertTrue(mock_builder.build.called)
+        self.assertTrue(mock_builder.upload.called)
+        self.assertTrue(mock_builder.cleanup.called)
+        mock_builder.reset_mock()
+        mock_builder.idle_sleep_time = 0
+        self.assertTrue(
+          buildd.handle_next_package(mock_builder, pkgs, exit_event))
+
+        self.assertFalse(mock_builder.build.called)
+        self.assertFalse(mock_builder.upload.called)
+        self.assertFalse(mock_builder.cleanup.called)
+        self.assertFalse(
+          buildd.handle_next_package(mock_builder, pkgs, exit_event))
 
 
 if __name__ == '__main__':
