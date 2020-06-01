@@ -24,7 +24,7 @@ import subprocess
 import threading
 import time
 
-from retrying import retry
+from retrying import retry  # type: ignore
 import yaml
 
 _ARCHIVE_TO_DUPLOAD_TARGET = {
@@ -349,6 +349,48 @@ class Builder:
             shutil.rmtree(self._build_dir(pkg))
 
 
+def setup_exit_handler():
+    exit_event = threading.Event()
+    def trigger_eventual_exit(signum, frame):
+        logging.info('Signal to exit received.')
+        exit_event.set()
+    signal.signal(signal.SIGUSR1, trigger_eventual_exit)
+    return exit_event
+
+
+def handle_next_package(builder: Builder,
+                        pkgs: Iterator[Optional[Package]],
+                        exit_event: threading.Event):
+    # Bail out early in case we were signalled to exit.
+    if exit_event.is_set():
+        logging.info('Exiting due to signal.')
+        return False
+
+    # Get the next item off the queue. This calls out to wanna-build.
+    try:
+        pkg = next(pkgs)
+    except StopIteration:
+        logging.info('No more packages to build; exiting.')
+        return False
+
+    # If there is nothing to do, back-off for a while.
+    if pkg is None:
+        logging.info('Nothing to do, sleeping for %d seconds...',
+                     builder.idle_sleep_time)
+        if not exit_event.is_set():
+            exit_event.wait(builder.idle_sleep_time)
+        return True
+
+    # We have something to do, so let's start building.
+    try:
+        if builder.build(pkg):
+            builder.upload(pkg)
+    finally:
+        builder.cleanup(pkg)
+
+    return True
+
+
 def main():
     logging.basicConfig(
         level=logging.DEBUG,
@@ -360,40 +402,10 @@ def main():
     buildd_config = config['buildd'] if 'buildd' in config else {}
     builder = Builder(buildd_config)
 
-    exit = threading.Event()
-    def trigger_eventual_exit(signum, frame):
-        logging.info('Signal to exit received.')
-        exit.set()
-    signal.signal(signal.SIGUSR1, trigger_eventual_exit)
-
+    exit_event = setup_exit_handler()
     pkgs = builder.builds()
-    while True:
-        # Bail out early in case we were signalled to exit.
-        if exit.is_set():
-            logging.info('Exiting due to signal.')
-            break
-
-        # Get the next item off the queue. This calls out to wanna-build.
-        try:
-            pkg = next(pkgs)
-        except StopIteration:
-            logging.info('No more packages to build; exiting.')
-            break
-
-        # If there is nothing to do, back-off for a while.
-        if pkg is None:
-            logging.info('Nothing to do, sleeping for %d seconds...',
-                         builder.idle_sleep_time)
-            if not exit.is_set():
-                exit.wait(builder.idle_sleep_time)
-            continue
-
-        # We have something to do, so let's start building.
-        try:
-            if builder.build(pkg):
-                builder.upload(pkg)
-        finally:
-            builder.cleanup(pkg)
+    while handle_next_package(builder, pkgs, exit_event):
+        pass
 
 
 if __name__ == '__main__':
