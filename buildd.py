@@ -31,6 +31,7 @@ _ARCHIVE_TO_DUPLOAD_TARGET = {
     'debian': 'rsync-ftp-master',
     'debian-security': 'rsync-security',
     'debian-ports': 'rsync-ports',
+    'default': 'loongbian',
 }
 
 
@@ -70,7 +71,7 @@ class Package:
         self.source_package, self.source_version = fields['pkg-ver'].split('_', 2)
         self.epochless_source_version = self.source_version.split(':')[
             1] if ':' in self.source_version else self.source_version
-        self.archive = fields['archive']
+        self.archive = fields.get('archive', 'default')
         self.architecture = fields['arch']
         self.distribution = fields['suite']
         for yaml_field, attr_name in self._FIELD_MAP.items():
